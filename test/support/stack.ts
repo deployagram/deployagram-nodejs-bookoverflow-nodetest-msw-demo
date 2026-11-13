@@ -1,25 +1,46 @@
 import { randomUUID } from 'node:crypto';
 import type { StartedKafkaContainer } from '@testcontainers/kafka';
-import { Network, type StartedNetwork, type StartedTestContainer } from 'testcontainers';
-import { brokersOf, createTopic, startKafka, SUGGESTIONS_TOPIC, waitUntilBrokerReady } from './kafka.js';
-import { schemaRegistryUrlOf, startSchemaRegistry } from './schema-registry.js';
+import { startDeployagramEnvironment, stopDeployagramEnvironment } from '@deployagram/environment';
+import { DiagramLoggerClient } from '@deployagram/logger-client';
+import type { StartedTestContainer } from 'testcontainers';
+import {
+  brokersOf,
+  createTopic,
+  networkBootstrapServersOf,
+  startKafka,
+  SUGGESTIONS_TOPIC,
+  waitUntilBrokerReady,
+} from './kafka.js';
+import {
+  networkSchemaRegistryUrlOf,
+  schemaRegistryUrlOf,
+  startSchemaRegistry,
+} from './schema-registry.js';
 
-/** The broker and the Schema Registry that one run starts, and how to stop them. */
+/** The broker, the Schema Registry and the Collector that one run uses, and how to stop what the run started. */
 export interface TestStack {
   readonly brokers: string[];
   readonly schemaRegistryUrl: string;
   stop(): Promise<void>;
 }
 
-/** Starts Kafka and the Schema Registry, on a network of their own, and creates the suggestions topic. */
+/**
+ * Starts the Collector, then Kafka and the Schema Registry on the Deployagram network, and points the Collector at them.
+ * The Collector is started here, not by a test file, so every test file reads the same one. Services that were already
+ * running are reused, and are left running.
+ */
 export async function startTestStack(): Promise<TestStack> {
-  let network: StartedNetwork | undefined;
+  // Runtime mode lets the run point the Collector at its broker and registry.
+  const deployagram = await startDeployagramEnvironment({
+    proxy: false,
+    loggerEnvironment: { KAFKA_BROKER_LOCATION_MODE: 'RUNTIME', SCHEMA_REGISTRY_LOCATION_MODE: 'RUNTIME' },
+  });
   let kafka: StartedKafkaContainer | undefined;
   let schemaRegistry: StartedTestContainer | undefined;
   const stop = async () => {
     await schemaRegistry?.stop();
     await kafka?.stop();
-    await network?.stop();
+    await stopDeployagramEnvironment();
   };
 
   try {
@@ -28,13 +49,18 @@ export async function startTestStack(): Promise<TestStack> {
     const kafkaAlias = `bookoverflow-kafka-${suffix}`;
     const registryAlias = `bookoverflow-schema-registry-${suffix}`;
 
-    network = await new Network().start();
-    kafka = await startKafka(network, kafkaAlias);
+    kafka = await startKafka(kafkaAlias);
     const brokers = brokersOf(kafka);
     await waitUntilBrokerReady(brokers);
     await createTopic(brokers, SUGGESTIONS_TOPIC);
 
-    schemaRegistry = await startSchemaRegistry(network, registryAlias, kafkaAlias);
+    schemaRegistry = await startSchemaRegistry(registryAlias, kafkaAlias);
+
+    // The Collector reads each produced record from the broker, and decodes it with the registry.
+    const logger = new DiagramLoggerClient({ baseUrl: deployagram.logger.url });
+    await logger.configureKafkaBroker(networkBootstrapServersOf(kafkaAlias));
+    await logger.configureSchemaRegistry(networkSchemaRegistryUrlOf(registryAlias));
+
     return { brokers, schemaRegistryUrl: schemaRegistryUrlOf(schemaRegistry), stop };
   } catch (error) {
     await stop();

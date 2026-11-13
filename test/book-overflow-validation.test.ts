@@ -3,11 +3,14 @@ import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import { after, before, describe, it } from 'node:test';
+import { DiagramLoggerClient } from '@deployagram/logger-client';
 import { createBookOverflowServer } from '../src/book-overflow.js';
 import { SuggestionPublisher } from '../src/suggestion-publisher.js';
 import { createTopic, expectNoValue } from './support/kafka.js';
 import { brokersFromEnvironment, schemaRegistryUrlFromEnvironment } from './support/stack.js';
+import { callRecordingInbound } from './support/inbound-call.js';
 import { CLASSIC_BOOKS_URL, ClassicBooksStub } from './support/classic-books-stub.js';
+import { useDeployagram } from './support/deployagram.js';
 
 const SCHEMA_FILE = new URL('../schemas/dont_forget_message.avsc', import.meta.url);
 const BOOK = {
@@ -19,15 +22,26 @@ const BOOK = {
 
 describe('BookOverflowResourceTest', () => {
   let brokers: string[];
+  let logger: DiagramLoggerClient;
   let publisher: SuggestionPublisher;
   let server: Server;
   let appUrl: string;
   let topic: string;
   let classicBooks: ClassicBooksStub;
 
+  // Uses the Collector that the run started. There is no Proxy: the test records its own inbound call.
+  const deployagram = useDeployagram({
+    name: 'BookOverflowResourceTest',
+    environment: {
+      proxy: false,
+      loggerEnvironment: { KAFKA_BROKER_LOCATION_MODE: 'RUNTIME', SCHEMA_REGISTRY_LOCATION_MODE: 'RUNTIME' },
+    },
+  });
+
   before(async () => {
     brokers = brokersFromEnvironment();
     const schemaRegistryUrl = schemaRegistryUrlFromEnvironment();
+    logger = new DiagramLoggerClient({ baseUrl: deployagram.collectorUrl });
 
     // A topic of its own, so the test sees only what this test's requests write to it.
     topic = `SuppliedSuggestionsTopic-${randomUUID().slice(0, 8)}`;
@@ -41,7 +55,7 @@ describe('BookOverflowResourceTest', () => {
     appUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
     classicBooks = new ClassicBooksStub();
-    classicBooks.start([schemaRegistryUrl]);
+    classicBooks.start([deployagram.collectorUrl, schemaRegistryUrl]);
     classicBooks.passThrough(appUrl);
   }, { timeout: 180_000 });
 
@@ -66,10 +80,9 @@ describe('BookOverflowResourceTest', () => {
     classicBooks.answersWith(BOOK);
   }
 
-  // When: a reader asks BookOverflow over HTTP, with no email on the request.
+  // When: AppA calls BookOverflow over HTTP, with no email on the request.
   async function whenAReaderAsksWithoutAnEmail(): Promise<{ status: number; body: string }> {
-    const response = await fetch(`${appUrl}/BookOverflow/suggestion`);
-    return { status: response.status, body: await response.text() };
+    return callRecordingInbound(logger, { caller: 'AppA', callee: 'BookOverflow' }, new URL(`${appUrl}/BookOverflow/suggestion`));
   }
 
   // Then: BookOverflow answers 400, and says the email is required.

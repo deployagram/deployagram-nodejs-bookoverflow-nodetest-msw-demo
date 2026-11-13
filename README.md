@@ -45,3 +45,21 @@ tests run through `tsx`, which loads ES modules.
 - **Kafka image.** `apache/kafka-native` does not work with testcontainers' Kafka module, which starts the broker with
   `/etc/confluent/docker/run`. That script is only in Confluent's images, so the tests use `confluentinc/cp-kafka:7.6.1`
   in KRaft mode.
+
+## Deployagram instrumentation
+
+The tests are instrumented through the `node:test` adapter in `test/support/deployagram.ts`, with `@deployagram/core`.
+There is no Proxy. Three things are recorded to the Collector:
+
+| Call | How it is recorded |
+|---|---|
+| AppA → BookOverflow (the HTTP call) | The test records it itself (`test/support/inbound-call.ts`) |
+| BookOverflow → ClassicBooks (the HTTP client) | `@deployagram/msw`, which records the MSW stub |
+| BookOverflow → Kafka (the produced message) | `@deployagram/kafkajs`, which reports each acknowledged record |
+
+`test/with-stack.ts` runs the stack, and `test/support/stack.ts` starts the Collector with `proxy: false` and points it
+at the Kafka broker and Schema Registry. The Collector is found or started, and then left running, so only the run's
+containers are stopped at the end.
+
+The Collector's licence is read from `.env` and `.deployagram`, which are kept out of git. Run the tests with `npm test`:
+the Collector is started by `test/with-stack.ts`, so running `node --test` directly fails with a message saying so.

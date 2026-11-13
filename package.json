@@ -9,14 +9,24 @@
     "node": ">=22"
   },
   "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test": "node --env-file-if-exists=.env --import tsx test/with-stack.ts node --import tsx --test --test-concurrency=1 'test/**/*.test.ts'",
-    "typecheck": "tsc -p tsconfig.test.json --noEmit"
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@kafkajs/confluent-schema-registry": "^4.1.0",
+    "kafkajs": "^2.2.4"
   },
   "devDependencies": {
-    "@kafkajs/confluent-schema-registry": "^4.1.0",
+    "@deployagram/api": "^1.0.0",
+    "@deployagram/core": "^1.0.0",
+    "@deployagram/environment": "^1.0.0",
+    "@deployagram/kafkajs": "^1.0.0",
+    "@deployagram/logger-client": "^1.0.0",
+    "@deployagram/msw": "^1.0.0",
     "@testcontainers/kafka": "^12.2.1",
     "@types/node": "^22.20.5",
-    "kafkajs": "^2.2.4",
     "msw": "^3.0.4",
     "testcontainers": "^12.2.1",
     "tsx": "^4.23.15",
