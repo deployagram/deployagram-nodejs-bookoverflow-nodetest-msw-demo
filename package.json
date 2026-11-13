@@ -1,0 +1,25 @@
+{
+  "name": "deployagram-nodejs-bookoverflow-nodetest-msw-demo",
+  "version": "0.0.1",
+  "private": true,
+  "description": "A Node.js BookOverflow app: it serves a book recommendation over HTTP, asks ClassicBooks for a book, and publishes the suggestion to Kafka as Avro. Service tests use the built-in node:test runner, testcontainers and MSW to stub ClassicBooks.",
+  "license": "Unlicense",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --env-file-if-exists=.env --import tsx test/with-stack.ts node --import tsx --test --test-concurrency=1 'test/**/*.test.ts'",
+    "typecheck": "tsc -p tsconfig.test.json --noEmit"
+  },
+  "devDependencies": {
+    "@kafkajs/confluent-schema-registry": "^4.1.0",
+    "@testcontainers/kafka": "^12.2.1",
+    "@types/node": "^22.20.5",
+    "kafkajs": "^2.2.4",
+    "msw": "^3.0.4",
+    "testcontainers": "^12.2.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
